@@ -95,13 +95,12 @@ class Ethna_AppObject
 
         // DBオブジェクトの設定
         $db_list = $this->_getDBList();
-        if (Ethna::isError($db_list)) {
-            return $db_list;
-        } else if (is_null($db_list['rw'])) {
-            return Ethna::raiseError(
+        if (is_null($db_list['rw'])) {
+            throw new Ethna_Exception(
                 "Ethna_AppObjectを利用するにはデータベース設定が必要です",
                 E_DB_NODSN);
         }
+
         $this->my_db_rw = $db_list['rw'];
         $this->my_db_ro = $db_list['ro'];
         // XXX: app objはdb typeを知らなくても動くべき
@@ -353,7 +352,7 @@ class Ethna_AppObject
     {
         $method = "_dump_$type";
         if (method_exists($this, $method) == false) {
-            return Ethna::raiseError("Undefined Method [%s]", E_APP_NOMETHOD, $method);
+            throw new Ethna_Exception(sprintf("Undefined Method [%s]", $method), E_APP_NOMETHOD);
         }
 
         return $this->$method();
@@ -431,32 +430,26 @@ class Ethna_AppObject
         //    INSERT 文を取得し、実行
         $sql = $this->_getSQL_Add();
         for ($i = 0; $i < 4; $i++) {
-            $r = $this->my_db_rw->query($sql);
-            //   エラーの場合 -> 重複キーエラーの場合はリトライ
-            if (Ethna::isError($r)) {
-                if ($r->getCode() == E_DB_DUPENT) {
+            try {
+                $r = $this->my_db_rw->query($sql);
+
+            } catch (Ethna_Exception $e) {
+                if ($e->getCode() == E_DB_DUPENT) {
                     // 重複エラーキーの判別
                     $duplicate_key_list = $this->_getDuplicateKeyList();
-                    if (Ethna::isError($duplicate_key_list)) {
-                        return $duplicate_key_list;
-                    }
+
                     if (is_array($duplicate_key_list)
                         && count($duplicate_key_list) > 0) {
                         foreach ($duplicate_key_list as $k) {
-                            return Ethna::raiseNotice('Duplicate Key Error [%s]',
-                                                      E_APP_DUPENT, $k);
+                            throw new Ethna_Exception(sprintf('Duplicate Key Error [%s]', $k), E_APP_DUPENT);
                         }
                     }
-                } else {
-                    return $r;
                 }
-            } else {
-                break;
             }
         }
         if ($i == 4) {
             // cannot be reached
-            return Ethna::raiseError('Cannot detect Duplicate key Error', E_GENERAL);
+            throw new Ethna_Exception('Cannot detect Duplicate key Error', E_GENERAL);
         }
 
         // last insert idの取得: (mysql, sqliteのみ)
@@ -505,31 +498,26 @@ class Ethna_AppObject
         $sql = $this->_getSQL_Update();
         //   エラーの場合 -> 重複キーエラーの場合はリトライ(4回)
         for ($i = 0; $i < 4; $i++) {  //  magic number
-            $r = $this->my_db_rw->query($sql);
-            if (Ethna::isError($r)) {
-                if ($r->getCode() == E_DB_DUPENT) {
+            try {
+                $r = $this->my_db_rw->query($sql);
+            } catch (Ethna_Exception $e) {
+                if ($e->getCode() == E_DB_DUPENT) {
                     // 重複エラーキーの判別
                     $duplicate_key_list = $this->_getDuplicateKeyList();
-                    if (Ethna::isError($duplicate_key_list)) {
-                        return $duplicate_key_list;
-                    }
+
                     if (is_array($duplicate_key_list)
                         && count($duplicate_key_list) > 0) {
                         foreach ($duplicate_key_list as $k) {
-                            return Ethna::raiseNotice('Duplicate Key Error [%s]',
-                                                      E_APP_DUPENT, $k);
+                            throw new Ethna_Exception(sprintf('Duplicate Key Error [%s]', $k), E_APP_DUPENT);
                         }
                     }
-                } else {
-                    return $r;
                 }
-            } else {
-                break;
             }
+            break;
         }
         if ($i == 4) {
             // cannot be reached
-            return Ethna::raiseError('Cannot detect Duplicate key Error', E_GENERAL);
+            throw new Ethna_Exception('Cannot detect Duplicate key Error', E_GENERAL);
         }
 
         $affected_rows = $this->my_db_rw->affectedRows();
@@ -563,9 +551,6 @@ class Ethna_AppObject
         //   重複機ーエラーの場合はリトライ(4回) 
         for ($i = 0; $i < 3; $i++) {  // magic number
             $r = $this->my_db_rw->query($sql);
-            if (Ethna::isError($r)) {
-                return $r;
-            }
             $n = $r->numRows();
 
             if ($n > 0) {
@@ -573,11 +558,6 @@ class Ethna_AppObject
                 return $r;
             } else {
                 $r = $this->add();
-                if (Ethna::isError($r) == false) {
-                    return $r;
-                } else if ($r->getCode() != E_APP_DUPENT) {
-                    return $r;
-                }
             }
         }
         
@@ -597,9 +577,6 @@ class Ethna_AppObject
     {
         $sql = $this->_getSQL_Remove();
         $r = $this->my_db_rw->query($sql);
-        if (Ethna::isError($r)) {
-            return $r;
-        }
 
         // プロパティ/バックアップ/キャッシュクリア
         $this->id = $this->prop = $this->prop_backup = null;
@@ -630,9 +607,6 @@ class Ethna_AppObject
        if (is_null($offset) == false || is_null($count) == false) {
             $sql = $this->_getSQL_SearchLength($filter);
             $r = $this->my_db_ro->query($sql);
-            if (Ethna::isError($r)) {
-                return $r;
-            }
             $row = $this->my_db_ro->fetchRow($r, DB_FETCHMODE_ASSOC);
             $length = $row['id_count'];
         } else {
@@ -642,9 +616,6 @@ class Ethna_AppObject
         $id_list = array();
         $sql = $this->_getSQL_SearchId($filter, $order, $offset, $count);
         $r = $this->my_db_ro->query($sql);
-        if (Ethna::isError($r)) {
-            return $r;
-        }
         $n = $r->numRows();
         for ($i = 0; $i < $n; $i++) {
             $row = $this->my_db_ro->fetchRow($r, DB_FETCHMODE_ASSOC);
@@ -686,9 +657,6 @@ class Ethna_AppObject
         if (is_null($offset) == false || is_null($count) == false) {
             $sql = $this->_getSQL_SearchLength($filter);
             $r = $this->my_db_ro->query($sql);
-            if (Ethna::isError($r)) {
-                return $r;
-            }
             $row = $this->my_db_ro->fetchRow($r, DB_FETCHMODE_ASSOC);
             $length = $row['id_count'];
         } else {
@@ -698,9 +666,6 @@ class Ethna_AppObject
         $prop_list = array();
         $sql = $this->_getSQL_SearchProp($keys, $filter, $order, $offset, $count);
         $r = $this->my_db_ro->query($sql);
-        if (Ethna::isError($r)) {
-            return $r;
-        }
         $n = $r->numRows();
         for ($i = 0; $i < $n; $i++) {
             $row = $this->my_db_ro->fetchRow($r, DB_FETCHMODE_ASSOC);
@@ -776,9 +741,6 @@ class Ethna_AppObject
 
         // プロパティ取得
         $r = $this->my_db_ro->query($sql);
-        if (Ethna::isError($r)) {
-            return;
-        }
         $n = $r->numRows();
         if ($n == 0) {
             // try default
@@ -858,9 +820,7 @@ class Ethna_AppObject
         if ($check_pkey) {
             $sql = $this->_getSQL_Duplicate($this->id_def);
             $r = $this->my_db_rw->query($sql);
-            if (Ethna::isError($r)) {
-                return $r;
-            } else if ($r->numRows() > 0) {
+            if ($r->numRows() > 0) {
                 // we can overwrite $key_list here
                 $duplicate_key_list = to_array($this->id_def);
             }
@@ -873,9 +833,7 @@ class Ethna_AppObject
             }
             $sql = $this->_getSQL_Duplicate($k);
             $r = $this->my_db_rw->query($sql);
-            if (Ethna::isError($r)) {
-                return $r;
-            } else if ($r->NumRows() > 0) {
+            if ($r->NumRows() > 0) {
                 $duplicate_key_list[] = $k;
             }
         }
@@ -1504,9 +1462,6 @@ class Ethna_AppObject
         $r = array('ro' => null, 'rw' => null);
 
         $db_list = $this->backend->getDBList();
-        if (Ethna::isError($db_list)) {
-            return $r;
-        }
         foreach ($db_list as $elt) {
             if ($this->db_prefix) {
                 // 特定のプレフィクスが指定されたDB接続を利用
@@ -1590,15 +1545,9 @@ class Ethna_AppObject
         if ($cache_manager->isCached($cache_key, $this->prop_def_cache_lifetime)) {
             $prop_def = $cache_manager->get($cache_key,
                                             $this->prop_def_cache_lifetime);
-            if (Ethna::isError($prop_def) == false) {
-                return $prop_def;
-            }
         }
 
         $r = $this->my_db_ro->getMetaData($table_name);
-        if(Ethna::isError($r)){
-            return null;
-        }
 
         $prop_def = array();
         foreach ($r as $i => $field_def) {
