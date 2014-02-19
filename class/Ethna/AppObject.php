@@ -1556,8 +1556,8 @@ class Ethna_AppObject
         $table = $match[2];
 
         // PHP 4は常に小文字を返す...のでPHP 5専用
-        $table = preg_replace('/^([A-Z])/e', "strtolower('\$1')", $table);
-        $table = preg_replace('/([A-Z])/e', "'_' . strtolower('\$1')", $table);
+        $table = preg_replace_callback('/^([A-Z])/', function(array $matches){return strtolower($matches[1]);}, $table);
+        $table = preg_replace_callback('/([A-Z])/', function(array $matches){return '_' . strtolower($matches[1]);}, $table);
 
         //   JOIN には対応していないので、記述可能なテーブルは
         //   常に一つ、かつ primary は trueになる
